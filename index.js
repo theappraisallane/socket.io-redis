@@ -89,8 +89,6 @@ function adapter(uri, opts){
    */
 
   Redis.prototype.onmessage = function(pattern, channel, msg){
-    var pieces = channel.split('#');
-    if (uid == pieces.pop()) return debug('ignore same uid');
     var args = msgpack.decode(msg);
 
     if (args[0] && args[0].nsp === undefined) {
@@ -116,8 +114,18 @@ function adapter(uri, opts){
    */
 
   Redis.prototype.broadcast = function(packet, opts, remote){
-    Adapter.prototype.broadcast.call(this, packet, opts);
-    if (!remote) pub.publish(key, msgpack.encode([packet, opts]));
+    if (remote) {
+      // request came from another node, only then broadcast locally
+      Adapter.prototype.broadcast.call(this, packet, opts);
+    } else {
+      // make sure the packet has the adapter's namespace
+      packet.nsp = this.nsp.name;
+      var self = this;
+      // request came from this node, publish to Redis and wait for message
+      pub.publish(key, msgpack.encode([packet, opts]), function (err) {
+        self.emit('publish', packet.data);
+      });
+    }
   };
 
   return Redis;
