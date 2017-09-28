@@ -148,7 +148,8 @@ function adapter(uri, opts) {
     var args = msgpack.decode(msg);
     var packet;
 
-    if (uid === args.shift()) return debug('ignore same uid');
+    // we process all messages, including the ones we published
+    args.shift();
 
     packet = args[0];
 
@@ -411,9 +412,20 @@ function adapter(uri, opts) {
         channel += opts.rooms[0] + '#';
       }
       debug('publishing message to channel %s', channel);
-      pub.publish(channel, msg);
+      var self = this;
+      pub.publish(channel, msg, function(err) {
+        if (err) {
+          debug('error while publishing: ' + (err.stack || err));
+          self.listeners('error').length && self.emit('error', err);
+          // upon an error still broadcast locally
+          self.broadcast(packet, opts, true);
+          return;
+        }
+        self.emit('publish', packet.data);
+      });
+    } else {
+      Adapter.prototype.broadcast.call(this, packet, opts);
     }
-    Adapter.prototype.broadcast.call(this, packet, opts);
   };
 
   /**
